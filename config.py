@@ -16,10 +16,20 @@ best_model_path = os.path.join(current_path, "result_model/best_model.ckpt")
 if not os.path.exists(os.path.join(current_path, "result_model")):
     os.makedirs(os.path.join(current_path, "result_model"))
 
+log_path = os.path.join(current_path, "logs/default_log.log")
+if not os.path.exists(os.path.join(current_path, "logs")):
+    os.makedirs(os.path.join(current_path, "logs"))
+
 model_type_dict = {
     "en": "bert-base-cased",
     "ch": "bert-base-chinese"
 }
 
-max_length = 128
-samples_length = 1000000
+tag_seqs_num = {
+    "few-tplinker": 3
+}
+
+seq_max_length = 100
+label_max_length = 8
+samples_length = 1000000000
+map_hidden_size = 300
