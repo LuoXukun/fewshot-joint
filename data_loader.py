@@ -65,14 +65,18 @@ class Sample(FewshotSampleBase):
         return self.relation_tags_set
     
     def valid(self, target_classes):
-        return self.relation_tags_set.intersection(set(target_classes)) \
-            and not self.relation_tags_set.difference(set(target_classes))
+        #return self.relation_tags_set.intersection(set(target_classes)) \
+        #    and not self.relation_tags_set.difference(set(target_classes))
+        return self.relation_tags_set.intersection(set(target_classes))
+    
+    def get_data(self):
+        return self.sample_json
     
     def __str__(self):
         return str(self.sample_json)
 
 class FewshotJointDataset(Dataset):
-    def __init__(self, args, mode=0, model_type="few-tplinker"):
+    def __init__(self, args, mode=0):
         """ 
             Fewshot Joint Extraction Dataset.
             Args:
@@ -85,7 +89,7 @@ class FewshotJointDataset(Dataset):
         self.K = args.K
         self.Q = args.Q
         self.mode = mode
-        self.model_type = model_type
+        self.model_type = args.model_type
         self.data_name = args.data_name         # Name of dataset. Such as "NYT".
         self.data_type = args.data_type         # Type of dataset. "inter_data" or "intra_data".
         self.language = args.language           # The language. "en" or "ch".
@@ -112,7 +116,7 @@ class FewshotJointDataset(Dataset):
             for index, line in enumerate(f):
                 datas.append(json.loads(line.strip()))
         new_datas, label2array = get_norm_data(datas, self.tokenizer, self.data_name)
-        for data in tqdm(new_datas, desc="Generating fewshot samples"):
+        for data in tqdm(new_datas, desc="Generating fewshot samples", total=len(new_datas)):
             sample = Sample(data)
             samples.append(sample)
             sample_classes = sample.get_tag_classes()
@@ -133,9 +137,10 @@ class FewshotJointDataset(Dataset):
     
     def __populate__(self, indexs, savelabeldic=False):
         """ Populate samples into data dict. """
+        #print("Populate: {}".format(indexs))
         dataset = {"index": [], "src_ids": [], "seg_ids": [], "mask_ids": [], "tags": [[] for i in range(self.tag_seqs_num)], "rel_id": [], "samples_num": [], "sample": []}
         for index in indexs:
-            indexed_data = self.datamaker.get_indexed_data(self.samples[index], self.mode, self.seq_max_length, self.label_max_length)
+            indexed_data = self.datamaker.get_indexed_data(self.samples[index].get_data(), self.mode, self.seq_max_length, self.label_max_length)
             for (src_ids, seg_ids, mask_ids, tags, rel_id, sample) in indexed_data:
                 src_ids = torch.LongTensor(src_ids)
                 seg_ids = torch.LongTensor(seg_ids)
@@ -148,6 +153,7 @@ class FewshotJointDataset(Dataset):
         return dataset
     
     def __getitem__(self, index):
+        #print("Getting item...")
         target_classes, support_idx, query_idx = self.sampler.__next__()
         self.tag2id = {tag: idx for idx, tag in enumerate(target_classes)}
         self.id2tag = {idx: tag for idx, tag in enumerate(target_classes)}
@@ -160,6 +166,7 @@ class FewshotJointDataset(Dataset):
         return samples_length
 
 def collate_fn(batch, model_type):
+    #print("Collate_fn...")
     tags_size = tag_seqs_num[model_type]
     batch_support = {"src_ids": [], "seg_ids": [], "mask_ids": [], "tags": [[] for i in range(tags_size)], "rel_id": [], "samples_num": [], "sample": []}
     batch_query = {"src_ids": [], "seg_ids": [], "mask_ids": [], "tags": [[] for i in range(tags_size)], "rel_id": [], "samples_num": [], "id2tag": [], "sample": []}
@@ -172,7 +179,11 @@ def collate_fn(batch, model_type):
             else:
                 batch_support[k] += support_sets[i][k]
         for k in batch_query.keys():
-            batch_query[k] += query_sets[i][k]
+            if k == "tags":
+                for t in range(tags_size):
+                    batch_query[k][t] += query_sets[i][k][t]
+            else:
+                batch_query[k] += query_sets[i][k]
     for k in batch_support.keys():
         if k != "tags" and k != "samples_num" and k != "rel_id" and k!= "sample":
             batch_support[k] = torch.stack(batch_support[k], 0)
@@ -197,8 +208,8 @@ def get_loader(args, mode=0):
         dataset=dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        pin_memory=True,
-        num_workers=args.num_workers,
+        #pin_memory=True,
+        #num_workers=args.num_workers,
         collate_fn=lambda batch: collate_fn(batch, model_type=args.model_type)
     )
     return iter(data_loader)
@@ -207,18 +218,24 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     args = parser.parse_args()
 
-    args.N = 2
-    args.K = 2
-    args.Q = 2
+    args.N = 5
+    args.K = 1
+    args.Q = 1
     args.data_name = "NYT"                  # Name of dataset. Such as "NYT".
     args.data_type = "inter_data"           # Type of dataset. "inter_data" or "intra_data".
     args.language = "en"                    # The language. "en" or "ch".
-    args.batch_size = 2
-    args.num_workers = 4
+    args.batch_size = 1
+    #args.num_workers = 4
     args.model_type = "few-tplinker"
+    args.seq_max_length = seq_max_length
+    args.label_max_length = label_max_length
+    args.tagger = TaggingScheme[args.model_type](args.seq_max_length - args.label_max_length - 2)
     
+    data_loader = get_loader(args, mode=0)
     
-    for batch_support, batch_query in get_loader(args, mode=0):
-        print(batch_support)
-        print(batch_query)
-        break
+    for it in range(0, 100):
+        print(it)
+        batch_support, batch_query = next(data_loader)
+        #print("Support: ", batch_support)
+        #print("Query: ", batch_query)
+        #break

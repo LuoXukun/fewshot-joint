@@ -7,7 +7,7 @@ import os
 import torch
 import torch.nn as nn
 
-from torch.nn import DataParallel
+#from torch.nn import DataParallel
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 class FewshotJointFramework:
@@ -15,7 +15,7 @@ class FewshotJointFramework:
         """ FewShot Framework for Joint Extraction of Entities and Relations. """
         self.train_data_loader = args.train_data_loader
         self.valid_data_loader = args.valid_data_loader
-        self.test_data_loader = args.test_data_laoder
+        self.test_data_loader = args.test_data_loader
         self.logger = args.logger
 
     def __load_model__(self, ckpt):
@@ -69,10 +69,10 @@ class FewshotJointFramework:
 
         # For simplicity, we use DataParallel wrapper to use multiple GPUs.
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if torch.cuda.device_count() > 1:
+        """ if torch.cuda.device_count() > 1:
             self.logger.info("{} GPUs are available. Let's use them.".format(torch.cuda.device_count()))
             args.model = nn.DataParallel(args.model)
-            #model = model.module
+            #args.model = args.model.module """
         args.model = args.model.to(device)
 
         # Init optimizer.
@@ -97,10 +97,14 @@ class FewshotJointFramework:
                 if k != "tags" and k != "samples_num" and k != "rel_id" and k != "sample":
                     support[k] = support[k].to(device)
                     query[k] = query[k].to(device)
-                label = [torch.cat(query["tags"][i], 0).to(device) for i in range(3)]
+            support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
+            label = [torch.stack(query["tags"][i], 0).to(device) for i in range(3)]
             
             logits, preds = args.model(support, query)
-            assert logits.shape[1] == label.shape[1]
+            #print("support: {}, query: {}, logits: {}, label: {}, samples_num: {}".format(support["src_ids"].shape, query["src_ids"].shape, logits[0].shape, label[0].shape, query["samples_num"]))
+            assert logits[0].shape[:2] == label[0].shape[:2]
+            #assert logits[1].shape[:2] == label[1].shape[:2]
+            #assert logits[2].shape[:2] == label[2].shape[:2]
             loss = args.model.loss(logits, label) / float(args.grad_iter)
             accs = args.metrics_calculator.get_accs(preds, label)
             loss.backward()
@@ -127,9 +131,9 @@ class FewshotJointFramework:
 
             # Validation.
             if(it + 1) % args.val_step == 0:
-                val_f1 = self.eval(args.model, args.metrics_calculator, args.eval_iter, device)
+                val_f1 = self.eval(args.model, args.metrics_calculator, args.val_iter, device)
                 args.model.train()
-                if val_f1 > best_f1:
+                if val_f1 > best_f1 or (it + 1) == args.val_step:
                     if args.save_ckpt:
                         self.logger.info("Better checkpoint! Saving...")
                         torch.save({"state_dict": args.model.state_dict()}, args.save_ckpt)
@@ -138,7 +142,7 @@ class FewshotJointFramework:
         # Testing.
         self.logger.info("Start Testing...")
         if args.save_ckpt:
-            test_f1 = self.eval(args.model, args.metrics_calculator, args.eval_iter, device, ckpt=args.save_ckpt)
+            test_f1 = self.eval(args.model, args.metrics_calculator, args.val_iter, device, ckpt=args.save_ckpt)
         else:
             self.logger.warning("There is no a saved checkpoint path, so we cannnot test on the best model!")
         
@@ -163,7 +167,7 @@ class FewshotJointFramework:
             self.logger.info("Using val dataset...")
             eval_data_loader = self.valid_data_loader
         else:
-            self.logger.info("Using val dataset...")
+            self.logger.info("Using test dataset...")
             if ckpt != 'none':
                 state_dict = self.__load_model__(ckpt)['state_dict']
                 own_state = model.state_dict()
@@ -183,6 +187,8 @@ class FewshotJointFramework:
                     if k != "tags" and k != "samples_num" and k != "rel_id" and k != "sample":
                         support[k] = support[k].to(device)
                         query[k] = query[k].to(device)
+                support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
+                #print("tags: ", support["tags"][0].size())
                 samples = query["sample"]
                 
                 logits, preds = model(support, query)

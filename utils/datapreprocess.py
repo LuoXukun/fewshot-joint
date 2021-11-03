@@ -30,7 +30,7 @@ def get_norm_data(data, tokenizer, data_name):
     """
     new_data, label2array = [], {}
     
-    for index, sample in tqdm(enumerate(data), desc = "Getting normalized data"):
+    for index, sample in tqdm(enumerate(data), desc = "Getting normalized data", total=len(data)):
         if data_name == "NYT" or data_name == "WebNLG":
             text = normalize_text(sample["sentText"]).strip()
             rel_list = sample["relationMentions"]
@@ -47,7 +47,7 @@ def get_norm_data(data, tokenizer, data_name):
             if data_name == "NYT":
                 sub = tokenizer.tokenize(normalize_text(rel[sub_key]).strip())
                 obj = tokenizer.tokenize(normalize_text(rel[obj_key]).strip())
-                label_array = label.replace("_", "/").split("/")
+                label_array = label.replace("_", "/").split("/")[1:]
             elif data_name == "WebNLG":
                 sub = tokenizer.tokenize(normalize_text(rel[sub_key]).strip())
                 obj = tokenizer.tokenize(normalize_text(rel[obj_key]).strip())
@@ -68,39 +68,39 @@ def get_norm_data(data, tokenizer, data_name):
     return new_data, label2array
 
     
-def normalize_text(self, text):
-        """ 
-            Normalize the unicode string.
-            Args:
-                text:           unicode string 
-            Return:
-        """
-        return unicodedata.normalize('NFKD', text).encode('ascii','ignore').decode('utf-8')
+def normalize_text(text):
+    """ 
+        Normalize the unicode string.
+        Args:
+            text:           unicode string 
+        Return:
+    """
+    return unicodedata.normalize('NFKD', text).encode('ascii','ignore').decode('utf-8')
 
-def find_index(self, sen_split, word_split):
-        """ 
-            Find the loaction of entity in sentence.
-            Args:
-                sen_split:      the sentence array.
-                word_split:     the entity array.
-            Return:
-                index1:         start index
-                index2:         end index
-        """
-        index1 = -1
-        index2 = -1
-        for i in range(len(sen_split)):
-            if str(sen_split[i]) == str(word_split[0]):
-                flag = True
-                k = i
-                for j in range(len(word_split)):
-                    if word_split[j] != sen_split[k]:
-                        flag = False
-                    if k < len(sen_split) - 1:
-                        k += 1
-                if flag:
-                    index1 = i
-                    index2 = i + len(word_split)
-                    break
-        return index1, index2
+def find_index(sen_split, word_split):
+    """ 
+        Find the loaction of entity in sentence.
+        Args:
+            sen_split:      the sentence array.
+            word_split:     the entity array.
+        Return:
+            index1:         start index
+            index2:         end index
+    """
+    index1 = -1
+    index2 = -1
+    for i in range(len(sen_split)):
+        if str(sen_split[i]) == str(word_split[0]):
+            flag = True
+            k = i
+            for j in range(len(word_split)):
+                if word_split[j] != sen_split[k]:
+                    flag = False
+                if k < len(sen_split) - 1:
+                    k += 1
+            if flag:
+                index1 = i
+                index2 = i + len(word_split)
+                break
+    return index1, index2
         

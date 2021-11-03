@@ -8,7 +8,7 @@ current_path = os.path.abspath(os.path.dirname(__file__))
 
 data_path_temp = [
     os.path.join(current_path, "data/<name_template>/<type_template>/train.json"),
-    os.path.join(current_path, "data/<name_template>/<type_template>/valid.json"),
+    os.path.join(current_path, "data/<name_template>/<type_template>/dev.json"),
     os.path.join(current_path, "data/<name_template>/<type_template>/test.json"),
 ]
 
@@ -32,4 +32,5 @@ tag_seqs_num = {
 seq_max_length = 100
 label_max_length = 8
 samples_length = 1000000000
-map_hidden_size = 300
+map_hidden_size = 100
+split_size = 50

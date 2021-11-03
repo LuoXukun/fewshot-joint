@@ -26,7 +26,7 @@ def load_parameters():
                         help="Directory of checkpoints for loading. Default: None.")
     parser.add_argument("--save_ckpt", default=best_model_path, type=str,
                         help="Directory of checkpoints for saving. Default: None.")
-    parser.add_argument("--log", default=log_path, type=str,
+    parser.add_argument("--log_path", default=log_path, type=str,
                         help="Log path.")
 
     # Model options.
@@ -73,11 +73,13 @@ def load_parameters():
     parser.add_argument("--map_hidden_size", type=int, default=map_hidden_size,
                         help="The hidden size of mapping layer.")
     parser.add_argument('--seed', type=int, default=7,
-                        help='random seed')
+                        help='random seed.')
     parser.add_argument("--warmup", type=int, default=0.1,
                         help="Warmup rate.")
     
     # Data options.
+    #parser.add_argument('--num_workers', type=int, default=4,
+    #                    help='Number of thread workers for data loader.')
     parser.add_argument("--data_name", 
         choices=["NYT"],
         default="NYT",
@@ -97,5 +99,6 @@ def load_parameters():
     args.seq_max_length = seq_max_length
     args.label_max_length = label_max_length
     args.warmup_step = int(args.warmup * args.train_iter)
+    args.split_size = split_size
     
     return args

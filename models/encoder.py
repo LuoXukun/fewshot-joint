@@ -12,6 +12,7 @@ class MyBertEncoder(nn.Module):
     def __init__(self, model_type_dict):
         super(MyBertEncoder, self).__init__()
         self.bert = BertModel.from_pretrained(model_type_dict)
+        self.config = self.bert.config
     
     def forward(self, src_ids, mask_ids, seg_ids):
         outputs = self.bert(src_ids, mask_ids, seg_ids, output_hidden_states=True, return_dict=True)

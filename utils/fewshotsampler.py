@@ -74,7 +74,9 @@ class FewshotSampler:
         class_count = sample.get_class_count()
         if not class_count:
             return False
-        isvalid = False
+        
+        # The origin version is wrong. Rewrite it based on the paper.
+        """ isvalid = False
         for class_name in class_count:
             if class_name not in target_classes:
                 isvalid = False
@@ -83,7 +85,14 @@ class FewshotSampler:
             elif set_class[class_name] + class_count[class_name] > threshold:
                 isvalid = False
             elif set_class[class_name] < set_class['k']:
-                isvalid = True
+                isvalid = True """
+        isvalid = True
+        for class_name in class_count:
+            if class_name not in target_classes: continue
+            if class_name not in set_class: continue
+            if set_class[class_name] + class_count[class_name] > threshold:
+                isvalid = False
+                break
         return isvalid
 
     def __finish__(self, set_class):
@@ -110,25 +119,44 @@ class FewshotSampler:
         query_class = {'k':self.Q}
         query_idx = []
         target_classes = random.sample(self.classes, self.N)
+        #print("target_classes: ", target_classes)
+
         candidates = self.__get_candidates__(target_classes)
         while not candidates:
             target_classes = random.sample(self.classes, self.N)
             candidates = self.__get_candidates__(target_classes)
+        #print("Candidate len:", len(candidates))
 
         # greedy search for support set
+        support_steps = 0
         while not self.__finish__(support_class):
             index = random.choice(candidates)
             if index not in support_idx:
                 if self.__valid_sample__(self.samples[index], support_class, target_classes):
                     self.__additem__(index, support_class)
                     support_idx.append(index)
+            support_steps += 1
+            if support_steps >= 10000:
+                #print("support steps: ", support_steps)
+                return self.__next__()
+        #print("support steps: ", support_steps)
+        #print("support_class: ", support_class)
+
         # same for query set
+        query_steps = 0
         while not self.__finish__(query_class):
             index = random.choice(candidates)
             if index not in query_idx and index not in support_idx:
                 if self.__valid_sample__(self.samples[index], query_class, target_classes):
                     self.__additem__(index, query_class)
                     query_idx.append(index)
+            query_steps += 1
+            if query_steps >= 10000:
+                #print("query steps: ", query_steps)
+                return self.__next__()
+        #print("query steps: ", query_steps)
+        #print("query_class: ", query_class)
+
         return target_classes, support_idx, query_idx
 
     def __iter__(self):
