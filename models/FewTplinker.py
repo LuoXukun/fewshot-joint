@@ -15,6 +15,7 @@ import json
 import math
 import torch
 import torch.nn as nn
+import numpy as np
 
 from tqdm import tqdm
 from torch.nn.parameter import Parameter
@@ -36,23 +37,23 @@ class HandshakingTaggingScheme(object):
         self.tag2id_head_rel = {
             "O": 0,
             "REL-SH2OH": 1, # subject head to object head
-            "REL-OH2SH": 2, # object head to subject head
+            #"REL-OH2SH": 2, # object head to subject head
         }
         self.id2tag_head_rel = {id_:tag for tag, id_ in self.tag2id_head_rel.items()}
 
         self.tag2id_tail_rel = {
             "O": 0,    
             "REL-ST2OT": 1, # subject tail to object tail
-            "REL-OT2ST": 2, # object tail to subject tail
+            #"REL-OT2ST": 2, # object tail to subject tail
         }
         self.id2tag_tail_rel = {id_:tag for tag, id_ in self.tag2id_tail_rel.items()}
 
         # mapping shaking sequence and matrix
         self.matrix_size = max_seq_len
         # e.g. [(0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2)]
-        self.shaking_ind2matrix_ind = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in list(range(self.matrix_size))[ind:]]
+        #self.shaking_ind2matrix_ind = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in list(range(self.matrix_size))[ind:]]
         # We do not cut the tagging sequence. e.g. [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2)]
-        #self.shaking_ind2matrix_ind = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in range(self.matrix_size)]
+        self.shaking_ind2matrix_ind = [(ind, end_ind) for ind in range(self.matrix_size) for end_ind in range(self.matrix_size)]
 
         self.matrix_ind2shaking_ind = [[0 for i in range(self.matrix_size)] for j in range(self.matrix_size)]
         for shaking_ind, matrix_ind in enumerate(self.shaking_ind2matrix_ind):
@@ -84,7 +85,10 @@ class HandshakingTaggingScheme(object):
             ent_matrix_spots.append((subj_tok_span[0], subj_tok_span[1] - 1, self.tag2id_ent["ENT-H2T"]))
             ent_matrix_spots.append((obj_tok_span[0], obj_tok_span[1] - 1, self.tag2id_ent["ENT-H2T"]))
 
-            if  subj_tok_span[0] <= obj_tok_span[0]:
+            head_rel_matrix_spots.append((subj_tok_span[0], obj_tok_span[0], self.tag2id_head_rel["REL-SH2OH"]))
+            tail_rel_matrix_spots.append((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tag2id_tail_rel["REL-ST2OT"]))
+
+            """ if  subj_tok_span[0] <= obj_tok_span[0]:
                 head_rel_matrix_spots.append((subj_tok_span[0], obj_tok_span[0], self.tag2id_head_rel["REL-SH2OH"]))
             else:
                 head_rel_matrix_spots.append((obj_tok_span[0], subj_tok_span[0], self.tag2id_head_rel["REL-OH2SH"]))
@@ -92,7 +96,7 @@ class HandshakingTaggingScheme(object):
             if subj_tok_span[1] <= obj_tok_span[1]:
                 tail_rel_matrix_spots.append((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tag2id_tail_rel["REL-ST2OT"]))
             else:
-                tail_rel_matrix_spots.append((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id_tail_rel["REL-OT2ST"]))
+                tail_rel_matrix_spots.append((obj_tok_span[1] - 1, subj_tok_span[1] - 1, self.tag2id_tail_rel["REL-OT2ST"])) """
                 
         return ent_matrix_spots, head_rel_matrix_spots, tail_rel_matrix_spots
 
@@ -103,10 +107,11 @@ class HandshakingTaggingScheme(object):
         return: 
             shake_seq_tag: (shaking_seq_len, )
         '''
-        shaking_seq_len = self.matrix_size * (self.matrix_size + 1) // 2
+        #shaking_seq_len = self.matrix_size * (self.matrix_size + 1) // 2
+        shaking_seq_len = self.matrix_size * self.matrix_size
         shaking_seq_tag = torch.zeros(shaking_seq_len).long()
         for sp in spots:
-            if sp[1] < self.matrix_size:
+            if sp[0] < self.matrix_size and sp[1] < self.matrix_size:
                 shaking_ind = self.matrix_ind2shaking_ind[sp[0]][sp[1]]
                 shaking_seq_tag[shaking_ind] = sp[2]
         return shaking_seq_tag
@@ -167,9 +172,9 @@ class HandshakingTaggingScheme(object):
             if tag_id == self.tag2id_tail_rel["REL-ST2OT"]:
                 tail_rel_memory = "{}-{}".format(sp[0], sp[1])
                 tail_rel_memory_set.add(tail_rel_memory)
-            elif tag_id == self.tag2id_tail_rel["REL-OT2ST"]:
-                tail_rel_memory = "{}-{}".format(sp[1], sp[0])
-                tail_rel_memory_set.add(tail_rel_memory)
+            #elif tag_id == self.tag2id_tail_rel["REL-OT2ST"]:
+            #    tail_rel_memory = "{}-{}".format(sp[1], sp[0])
+            #    tail_rel_memory_set.add(tail_rel_memory)
 
         # head relation
         for sp in head_rel_matrix_spots:
@@ -177,8 +182,8 @@ class HandshakingTaggingScheme(object):
             
             if tag_id == self.tag2id_head_rel["REL-SH2OH"]:
                 subj_head_key, obj_head_key = sp[0], sp[1]
-            elif tag_id == self.tag2id_head_rel["REL-OH2SH"]:
-                subj_head_key, obj_head_key = sp[1], sp[0]
+            #elif tag_id == self.tag2id_head_rel["REL-OH2SH"]:
+            #    subj_head_key, obj_head_key = sp[1], sp[0]
                 
             if subj_head_key not in head_ind2entities or obj_head_key not in head_ind2entities:
                 # no entity start with subj_head_key and obj_head_key
@@ -403,14 +408,17 @@ class HandshakingKernel(nn.Module):
         '''
         seq_hiddens: (batch_size, seq_len, hidden_size)
         return:
-            shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size) (32, 5+4+3+2+1, 5)
+            #shaking_hiddenss: (batch_size, (1 + seq_len) * seq_len / 2, hidden_size) (32, 5+4+3+2+1, 5)
+            shaking_hiddenss: (batch_size, seq_len * seq_len, hidden_size) (32, 5*5, 5)
         '''
         seq_len = seq_hiddens.size()[-2]
         shaking_hiddens_list = []
         for ind in range(seq_len):
             hidden_each_step = seq_hiddens[:, ind, :]
-            visible_hiddens = seq_hiddens[:, ind:, :] # ind: only look back
-            repeat_hiddens = hidden_each_step[:, None, :].repeat(1, seq_len - ind, 1)  
+            #visible_hiddens = seq_hiddens[:, ind:, :] # ind: only look back
+            visible_hiddens = seq_hiddens   # not only look back
+            #repeat_hiddens = hidden_each_step[:, None, :].repeat(1, seq_len - ind, 1)  
+            repeat_hiddens = hidden_each_step[:, None, :].repeat(1, seq_len, 1)
             
             if self.shaking_type == "cat":
                 shaking_hiddens = torch.cat([repeat_hiddens, visible_hiddens], dim = -1)
@@ -474,16 +482,22 @@ class FewTPLinker(nn.Module):
         #print("support_emb: ", support_emb.size())
         support_hidden = self.dropout(self.handshaking_kernel(support_emb))
         #print("support_hidden: ", support_hidden.size())
-        ent_support_hidden = self.dropout(torch.tanh(self.ent_map_fc(support_hidden)))
+        """ ent_support_hidden = self.dropout(torch.tanh(self.ent_map_fc(support_hidden)))
         head_rel_support_hidden = self.dropout(torch.tanh(self.head_rel_map_fc(support_hidden)))
-        tail_rel_support_hidden = self.dropout(torch.tanh(self.tail_rel_map_fc(support_hidden)))
+        tail_rel_support_hidden = self.dropout(torch.tanh(self.tail_rel_map_fc(support_hidden))) """
+        ent_support_hidden = self.ent_map_fc(support_hidden)
+        head_rel_support_hidden = self.head_rel_map_fc(support_hidden)
+        tail_rel_support_hidden = self.tail_rel_map_fc(support_hidden)
 
         # Query
         query_emb = self.encoder(query["src_ids"], query["mask_ids"], query["seg_ids"])[:, self.label_max_length + 2:, :]
         query_hidden = self.dropout(self.handshaking_kernel(query_emb))
-        ent_query_hidden = self.dropout(torch.tanh(self.ent_map_fc(query_hidden)))
+        """ ent_query_hidden = self.dropout(torch.tanh(self.ent_map_fc(query_hidden)))
         head_rel_query_hidden = self.dropout(torch.tanh(self.head_rel_map_fc(query_hidden)))
-        tail_rel_query_hidden = self.dropout(torch.tanh(self.tail_rel_map_fc(query_hidden)))
+        tail_rel_query_hidden = self.dropout(torch.tanh(self.tail_rel_map_fc(query_hidden))) """
+        ent_query_hidden = self.ent_map_fc(query_hidden)
+        head_rel_query_hidden = self.head_rel_map_fc(query_hidden)
+        tail_rel_query_hidden = self.tail_rel_map_fc(query_hidden)
 
         logits = [[] for i in range(3)] # ent, head_rel, tail_rel
         pred = [[] for i in range(3)]
@@ -509,7 +523,7 @@ class FewTPLinker(nn.Module):
                     head_rel_support_hidden[current_support_num:current_support_num+support_samples_num],
                     support["tags"][1][current_support_num:current_support_num+support_samples_num],
                     head_rel_query_hidden[current_query_num:current_query_num+query_samples_num],
-                    max_tag = 2
+                    max_tag = 1
                 )
             )
             #print("tail_rel")
@@ -518,13 +532,14 @@ class FewTPLinker(nn.Module):
                     tail_rel_support_hidden[current_support_num:current_support_num+support_samples_num],
                     support["tags"][2][current_support_num:current_support_num+support_samples_num],
                     tail_rel_query_hidden[current_query_num:current_query_num+query_samples_num],
-                    max_tag = 2
+                    max_tag = 1
                 )
             )
             current_query_num += query_samples_num
             current_support_num += support_samples_num
         
         #print("logits: {}, {}, {}".format(logits[0][0].size(), logits[1][0].size(), logits[2][0].size()))
+        #print("logits: {}, {}, {}".format(logits[0][0], logits[1][0], logits[2][0]))
         for i in range(3):
             logits[i] = torch.cat(logits[i], 0)
             _, pred[i] = torch.max(logits[i], -1)
@@ -532,6 +547,7 @@ class FewTPLinker(nn.Module):
         return logits, pred
 
     def __dist__(self, x, y, dim):
+        torch.cuda.empty_cache()
         if self.dist_type == "dot":
             return (x * y).sum(dim)
         else:
@@ -548,7 +564,8 @@ class FewTPLinker(nn.Module):
         tag = tag.view(-1)
         #print("tag_size: {}, S_size: {}, Q_size: {}".format(tag.size(), S.size(), query.size()))
         assert tag.size(0) == S.size(0)
-        support_token_len, query_num, query_len = embedding.shape[0], query.shape[0], query.shape[1]
+        support_token_len, query_num, query_len = S.shape[0], query.shape[0], query.shape[1]
+        #print("support_token_len: ", support_token_len)
         #dist = self.__batch_dist__(S, query) # [num_of_query_tokens, num_of_support_tokens]
         #for label in range(torch.max(tag)+1):
         #    nearest_dist.append(torch.max(dist[:,tag==label], 1)[0])
@@ -578,13 +595,18 @@ class FewTPLinker(nn.Module):
         for i in range(query_num):
             nearest_dist_q = [[torch.ones(query_len).to(self.device) * -10000.0] for label in range(max_tag + 1)]
             support_split_index = 0
+            #print("out: ", np.argwhere(tag.cpu().numpy() == 1))
             for start_index in range(0, support_token_len, self.split_size):
+                torch.cuda.empty_cache()
                 end_index = min(start_index + self.split_size, support_token_len)
+                #print("start: {}, end: {}".format(start_index, end_index))
                 dist = self.__batch_dist__(S[start_index:end_index, :], query[i])
-                #print("dist: ", dist.size())
+                #print("dist: ", dist)
                 for label in range(max_tag + 1):
                     dist_valid = dist[:,tag[start_index:end_index]==label]
-                    #print("dist_valid: ", dist_valid.size())
+                    """ if label == 1:
+                        #print("dist_valid: ", dist_valid)
+                        print("in:", tag[start_index:end_index]==label) """
                     if dist_valid.size(1) == 0:
                         nearest_dist_q[label].append(torch.ones(query_len).to(self.device) * -10000.0)
                     else:
@@ -596,6 +618,7 @@ class FewTPLinker(nn.Module):
             #print("nearest_dist_q: ", nearest_dist_q[0].size())
             nearest_dist.append(torch.stack(nearest_dist_q, dim=1))
         nearest_dist = torch.stack(nearest_dist, dim=0)
+        #print("nearset_dist: ", nearest_dist)
         #print("nearest_dist: ", nearest_dist.size())
         return nearest_dist.view(query_num, -1, max_tag + 1)
     

@@ -92,14 +92,21 @@ class FewshotJointFramework:
 
         for it in range(start_iter, start_iter + args.train_iter):
             support, query = next(self.train_data_loader)
+            support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
+
+            if args.model_type == "few-tplinker":
+                while torch.max(support["tags"][0]) != 1 or torch.max(support["tags"][1]) != 1 or torch.max(support["tags"][2]) != 1:
+                    args.logger.warning("Invalid samples, get new samples...")
+                    support, query = next(self.train_data_loader)
+                    support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
 
             for k in support:
                 if k != "tags" and k != "samples_num" and k != "rel_id" and k != "sample":
                     support[k] = support[k].to(device)
                     query[k] = query[k].to(device)
-            support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
             label = [torch.stack(query["tags"][i], 0).to(device) for i in range(3)]
             
+            print("support: {}, query: {}".format(support["src_ids"].shape, query["src_ids"].shape))
             logits, preds = args.model(support, query)
             #print("support: {}, query: {}, logits: {}, label: {}, samples_num: {}".format(support["src_ids"].shape, query["src_ids"].shape, logits[0].shape, label[0].shape, query["samples_num"]))
             assert logits[0].shape[:2] == label[0].shape[:2]
