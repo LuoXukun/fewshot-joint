@@ -49,6 +49,8 @@ class FewshotJointFramework:
                 save_ckpt:              Directory of checkpoints for saving. Default: None.
                 warmup_step:            Warming up steps.
                 grad_iter:              Iter of gradient descent. Default: 1.
+                tag_seqs_num:           Tag seqs number.
+                use_fp16:               If use fp16.
             
             Returns:
         """
@@ -84,7 +86,12 @@ class FewshotJointFramework:
             {'params': [p for n, p in parameters_to_optimize if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
         optimizer = AdamW(parameters_to_optimize, lr=args.learning_rate, correct_bias=False)
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_step, num_training_steps=args.train_iter) 
+
+        if args.use_fp16:
+            from apex import amp
+            args.model, optimizer = amp.initialize(args.model, optimizer, opt_level="O1")
+        
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(args.warmup_step/args.grad_iter), num_training_steps=int(args.train_iter/args.grad_iter))
 
         # Training.
         best_f1, iter_loss, iter_accs = 0.0, 0.0, None
@@ -92,21 +99,21 @@ class FewshotJointFramework:
 
         for it in range(start_iter, start_iter + args.train_iter):
             support, query = next(self.train_data_loader)
-            support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
+            support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(args.tag_seqs_num)]
 
             if args.model_type == "few-tplinker":
-                while torch.max(support["tags"][0]) != 1 or torch.max(support["tags"][1]) != 1 or torch.max(support["tags"][2]) != 1:
-                    args.logger.warning("Invalid samples, get new samples...")
+                while torch.max(support["tags"][0]) != 1 or torch.max(support["tags"][1]) != 1:
+                    #args.logger.warning("Invalid samples, get new samples...")
                     support, query = next(self.train_data_loader)
-                    support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
+                    support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(args.tag_seqs_num)]
 
             for k in support:
                 if k != "tags" and k != "samples_num" and k != "rel_id" and k != "sample":
                     support[k] = support[k].to(device)
                     query[k] = query[k].to(device)
-            label = [torch.stack(query["tags"][i], 0).to(device) for i in range(3)]
+            label = [torch.stack(query["tags"][i], 0).to(device) for i in range(args.tag_seqs_num)]
             
-            print("support: {}, query: {}".format(support["src_ids"].shape, query["src_ids"].shape))
+            #print("support: {}, query: {}".format(support["src_ids"].shape, query["src_ids"].shape))
             logits, preds = args.model(support, query)
             #print("support: {}, query: {}, logits: {}, label: {}, samples_num: {}".format(support["src_ids"].shape, query["src_ids"].shape, logits[0].shape, label[0].shape, query["samples_num"]))
             assert logits[0].shape[:2] == label[0].shape[:2]
@@ -114,7 +121,12 @@ class FewshotJointFramework:
             #assert logits[2].shape[:2] == label[2].shape[:2]
             loss = args.model.loss(logits, label) / float(args.grad_iter)
             accs = args.metrics_calculator.get_accs(preds, label)
-            loss.backward()
+
+            if args.use_fp16:
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
 
             if it % args.grad_iter == 0:
                 optimizer.step()
@@ -138,7 +150,7 @@ class FewshotJointFramework:
 
             # Validation.
             if(it + 1) % args.val_step == 0:
-                val_f1 = self.eval(args.model, args.metrics_calculator, args.val_iter, device)
+                val_f1 = self.eval(args.model, args.metrics_calculator, args.val_iter, device, args.tag_seqs_num)
                 args.model.train()
                 if val_f1 > best_f1 or (it + 1) == args.val_step:
                     if args.save_ckpt:
@@ -149,13 +161,13 @@ class FewshotJointFramework:
         # Testing.
         self.logger.info("Start Testing...")
         if args.save_ckpt:
-            test_f1 = self.eval(args.model, args.metrics_calculator, args.val_iter, device, ckpt=args.save_ckpt)
+            test_f1 = self.eval(args.model, args.metrics_calculator, args.val_iter, device, args.tag_seqs_num, ckpt=args.save_ckpt)
         else:
             self.logger.warning("There is no a saved checkpoint path, so we cannnot test on the best model!")
         
         self.logger.info("Finish Training")
     
-    def eval(self, model, metrics_calculator, eval_iter, device, ckpt=None):
+    def eval(self, model, metrics_calculator, eval_iter, device, tag_seqs_num, ckpt=None):
         '''
             Validation.
             Args:
@@ -163,6 +175,7 @@ class FewshotJointFramework:
                 metrics_calculator:     Few shot metrics calculator.
                 eval_iter:              Num of iterations.
                 device:                 CPU or GPU.
+                tag_seqs_num:           Tag seqs number.
                 ckpt:                   Checkpoint path. Set as None if using current model parameters.
             Returns: 
                 f1
@@ -194,7 +207,7 @@ class FewshotJointFramework:
                     if k != "tags" and k != "samples_num" and k != "rel_id" and k != "sample":
                         support[k] = support[k].to(device)
                         query[k] = query[k].to(device)
-                support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(3)]
+                support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(tag_seqs_num)]
                 #print("tags: ", support["tags"][0].size())
                 samples = query["sample"]
                 

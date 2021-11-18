@@ -26,11 +26,11 @@ model_type_dict = {
 }
 
 tag_seqs_num = {
-    "few-tplinker": 3
+    "few-tplinker": 2
 }
 
-seq_max_length = 100
+seq_max_length = 50
 label_max_length = 8
 samples_length = 1000000000
-map_hidden_size = 100
-split_size = 50
+map_hidden_size = 20
+split_size = 32

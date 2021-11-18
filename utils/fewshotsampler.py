@@ -95,9 +95,9 @@ class FewshotSampler:
             if set_class[class_name] + class_count[class_name] > threshold:
                 isvalid = False
                 break
-        print("isvalid: ", isvalid)
+        """ print("isvalid: ", isvalid)
         if isvalid:
-            print(sample)
+            print(sample) """
         return isvalid
 
     def __finish__(self, set_class):

@@ -58,7 +58,7 @@ def load_parameters():
                         help="Number of instances of each class in support set.")
     parser.add_argument("--Q", type=int, default=3,
                         help="Number of instances of each class in query set.")
-    parser.add_argument("--learning_rate", type=float, default=1e-5,
+    parser.add_argument("--learning_rate", type=float, default=2e-5,
                         help="Learning rate.")
     parser.add_argument("--train_iter", type=int, default=600,
                         help="Num of iterations of training.")
@@ -100,5 +100,7 @@ def load_parameters():
     args.label_max_length = label_max_length
     args.warmup_step = int(args.warmup * args.train_iter)
     args.split_size = split_size
+    args.tag_seqs_num = tag_seqs_num[args.model_type]
+    args.use_fp16 = True
     
     return args
