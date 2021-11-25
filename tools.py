@@ -31,9 +31,13 @@ def load_parameters():
 
     # Model options.
     parser.add_argument("--model_type", 
-        choices=["few-tplinker"],
+        choices=["few-tplinker", "few-tplinker-plus"],
         default="few-tplinker",
         help="Few shot model type.")
+    parser.add_argument("--plus_type", 
+        choices=["dot-sigmoid", "top-k", "negative-sampling"],
+        default="dot-sigmoid",
+        help="The plus type of few-tplinker-plus.")
     parser.add_argument("--shaking_type", 
         choices=["cat", "cat_plus", "cln", "cln_plus"],
         default="cat",
@@ -46,6 +50,8 @@ def load_parameters():
         choices=["dot", "euclidean"],
         default="euclidean",
         help="The type of calculating disance.")
+    parser.add_argument("--train", type=int, default=1,
+                        help="If train or test. 1->train, 0->test.")
 
     # Training options.
     parser.add_argument("--batch_size", type=int, default=4,
@@ -76,6 +82,8 @@ def load_parameters():
                         help='random seed.')
     parser.add_argument("--warmup", type=int, default=0.1,
                         help="Warmup rate.")
+    parser.add_argument("--use_fp16", type=int, default=1,
+                        help="If use fp16.")
     
     # Data options.
     #parser.add_argument('--num_workers', type=int, default=4,
@@ -101,6 +109,7 @@ def load_parameters():
     args.warmup_step = int(args.warmup * args.train_iter)
     args.split_size = split_size
     args.tag_seqs_num = tag_seqs_num[args.model_type]
-    args.use_fp16 = True
+    args.train = True if args.train else False
+    args.use_fp16 = True if args.train else False
     
     return args

@@ -25,8 +25,8 @@ def main():
 
     args.logger.info("{}-way-{}-shot Few-Shot Joint Extraction".format(args.N, args.K))
     args.logger.info(
-        "model: {}, shaking_type: {}, inner_enc_type: {}, dist_type: {}".format(
-            args.model_type, args.shaking_type, args.inner_enc_type, args.dist_type
+        "model: {}, shaking_type: {}, inner_enc_type: {}, dist_type: {}, plus_type: {}, train: {}".format(
+            args.model_type, args.shaking_type, args.inner_enc_type, args.dist_type, args.plus_type, args.train
         )
     )
     args.logger.info("seq_max_length: {}, label_max_len: {}".format(args.seq_max_length, args.label_max_length))
@@ -55,7 +55,10 @@ def main():
     args.framework = FewshotJointFramework(args)
 
     # Train, valid and test.
-    args.framework.train(args)
+    if args.train:
+        args.framework.train(args)
+    else:
+        args.framework.test(args, False)
 
 if __name__ == "__main__":
     main()
