@@ -100,6 +100,8 @@ def load_parameters():
         choices=["en", "ch"],
         default="en",
         help="The language.")
+    parser.add_argument('--group', type=int, default=0,
+                        help='Group setting. Training set: 0 -> AB, 1 -> AC, 2 -> BC.')
     
     args = parser.parse_args()
 
@@ -110,6 +112,6 @@ def load_parameters():
     args.split_size = split_size
     args.tag_seqs_num = tag_seqs_num[args.model_type]
     args.train = True if args.train else False
-    args.use_fp16 = True if args.train else False
+    args.use_fp16 = True if args.use_fp16 else False
     
     return args

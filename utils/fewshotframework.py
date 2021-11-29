@@ -15,7 +15,7 @@ class FewshotJointFramework:
         """ FewShot Framework for Joint Extraction of Entities and Relations. """
         self.train_data_loader = args.train_data_loader
         self.valid_data_loader = args.valid_data_loader
-        self.test_data_loader = args.test_data_loader
+        #self.test_data_loader = args.test_data_loader
         self.logger = args.logger
 
     def __load_model__(self, ckpt):
@@ -184,24 +184,23 @@ class FewshotJointFramework:
         self.logger.info("Evaluation...")
         model.eval()
 
-        if ckpt is None:
-            self.logger.info("Using val dataset...")
-            eval_data_loader = self.valid_data_loader
-        else:
-            self.logger.info("Using test dataset...")
-            if ckpt != 'none':
-                state_dict = self.__load_model__(ckpt)['state_dict']
-                own_state = model.state_dict()
-                for name, param in state_dict.items():
-                    if name not in own_state:
-                        continue
-                    own_state[name].copy_(param)
-            eval_data_loader = self.test_data_loader
+        eval_data_loader = self.valid_data_loader
+        total_iter = eval_iter
+
+        if ckpt is not None:
+            self.logger.info("Loading best checkpoint '{}'...".format(ckpt))
+            state_dict = self.__load_model__(ckpt)['state_dict']
+            own_state = model.state_dict()
+            for name, param in state_dict.items():
+                if name not in own_state:
+                    continue
+                own_state[name].copy_(param)
+            total_iter = eval_iter * 4
         
         pred_cnt, gold_cnt, correct_cnt = 0, 0, 0
         
         with torch.no_grad():
-            for it in range(eval_iter):
+            for it in range(total_iter):
                 support, query = next(eval_data_loader)
                 support["tags"] = [torch.stack(support["tags"][i], 0).to(device) for i in range(tag_seqs_num)]
 
@@ -230,25 +229,17 @@ class FewshotJointFramework:
 
             self.logger.critical(
                 "EVAL -- Eval_iter: {}, Pred: {}, Gold: {}, Correct: {}, Prec: {}, Rec: {}, F1: {}".format(
-                    eval_iter, pred_cnt, gold_cnt, correct_cnt, prec, rec, f1
+                    total_iter, pred_cnt, gold_cnt, correct_cnt, prec, rec, f1
                 )
             )
         
         return f1
 
-    def test(self, args, test=True):
+    def test(self, args):
         """ 
             Simple test.
-            Args:
-                test:       True -> test, False -> valid.
-            Returns:
         """
-        if test:
-            self.logger.info("Using test dataset...")
-            eval_data_loader = self.test_data_loader
-        else:
-            self.logger.info("Using val dataset...")
-            eval_data_loader = self.valid_data_loader
+        eval_data_loader = self.valid_data_loader
 
         self.logger.info("Start testing...")
 

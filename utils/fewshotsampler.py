@@ -70,9 +70,9 @@ class FewshotSampler:
                 set_class[class_name] = class_count[class_name]
 
     def __valid_sample__(self, sample, set_class, target_classes):
-        #threshold = 2 * set_class['k']
+        threshold = 2 * set_class['k']
         # We do not want 1~2 shot when K = 1.
-        threshold = int(1.5 * float(set_class['k']))
+        #threshold = int(1.5 * float(set_class['k']))
         class_count = sample.get_class_count()
         if not class_count:
             return False

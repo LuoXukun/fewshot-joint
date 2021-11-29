@@ -15,7 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 from models import DataMaker, TaggingScheme
 from utils.datapreprocess import get_norm_data
 from utils.fewshotsampler import FewshotSampleBase, FewshotSampler
-from config import data_path_temp, model_type_dict, seq_max_length, label_max_length, samples_length, tag_seqs_num
+from config import data_path_index, data_path_temp, model_type_dict, seq_max_length, label_max_length, samples_length, tag_seqs_num
 
 class Sample(FewshotSampleBase):
     def __init__(self, sample_json):
@@ -81,7 +81,8 @@ class FewshotJointDataset(Dataset):
             Fewshot Joint Extraction Dataset.
             Args:
                 args:       The arguments from command.
-                mode:       The mode of data. 0 -> train, 1 -> valid, 2 -> test.
+                mode:       The mode of data. 0 -> train, 1 -> valid.
+                group:      The group setting.
             Returns:
         """
         self.class2sampleid = {}
@@ -93,7 +94,15 @@ class FewshotJointDataset(Dataset):
         self.data_name = args.data_name         # Name of dataset. Such as "NYT".
         self.data_type = args.data_type         # Type of dataset. "inter_data" or "intra_data".
         self.language = args.language           # The language. "en" or "ch".
-        self.data_path = data_path_temp[self.mode].replace("<name_template>", self.data_name).replace("<type_template>", self.data_type)
+        self.logger = args.logger
+        self.group = args.group
+        self.data_index = data_path_index[self.group]
+        self.data_path = []
+        if self.mode == 0:
+            self.data_path.append(data_path_temp[self.data_index[0]].replace("<name_template>", self.data_name).replace("<type_template>", self.data_type))
+            self.data_path.append(data_path_temp[self.data_index[1]].replace("<name_template>", self.data_name).replace("<type_template>", self.data_type))
+        else:
+            self.data_path.append(data_path_temp[self.data_index[2]].replace("<name_template>", self.data_name).replace("<type_template>", self.data_type))
         self.tokenizer = BertTokenizerFast.from_pretrained(model_type_dict[self.language])
         self.samples, self.classes, self.label2array = self.__load_data__()
         self.tag_seqs_num = tag_seqs_num[self.model_type]
@@ -112,9 +121,11 @@ class FewshotJointDataset(Dataset):
     def __load_data__(self):
         """ Load data from the json file. """
         datas, samples, classes = [], [], set()
-        with open(self.data_path, "r", encoding="utf-8") as f:
-            for index, line in enumerate(f):
-                datas.append(json.loads(line.strip()))
+        self.logger.info("Loading data from {}".format(self.data_path))
+        for data_file in self.data_path:
+            with open(data_file, "r", encoding="utf-8") as f:
+                for index, line in enumerate(f):
+                    datas.append(json.loads(line.strip()))
         new_datas, label2array = get_norm_data(datas, self.tokenizer, self.data_name)
         for data in tqdm(new_datas, desc="Generating fewshot samples", total=len(new_datas)):
             sample = Sample(data)
@@ -199,7 +210,7 @@ def get_loader(args, mode=0):
         The data loader for Fewshot Joint Extration dataset.
         Args:
             args:       The arguments from command.
-            mode:       The mode of data. 0 -> train, 1 -> valid, 2 -> test.
+            mode:       The mode of data. 0 -> train, 1 -> valid.
         Returns:
             data_loader
     """
@@ -223,6 +234,7 @@ if __name__ == "__main__":
     args.Q = 1
     args.data_name = "NYT"                  # Name of dataset. Such as "NYT".
     args.data_type = "inter_data"           # Type of dataset. "inter_data" or "intra_data".
+    args.group = 0
     args.language = "en"                    # The language. "en" or "ch".
     args.batch_size = 1
     #args.num_workers = 4

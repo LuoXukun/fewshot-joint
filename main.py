@@ -47,8 +47,6 @@ def main():
     args.train_data_loader = get_loader(args, mode=0)
     args.logger.info("Loading valid dataset...")
     args.valid_data_loader = get_loader(args, mode=1)
-    args.logger.info("Loading test dataset...")
-    args.test_data_loader = get_loader(args, mode=2)
 
     # Framework
     args.logger.info("Building up few-shot Joint extraction framework...")
@@ -58,7 +56,7 @@ def main():
     if args.train:
         args.framework.train(args)
     else:
-        args.framework.test(args, False)
+        args.framework.test(args)
 
 if __name__ == "__main__":
     main()
