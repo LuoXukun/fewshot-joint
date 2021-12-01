@@ -9,15 +9,10 @@
     Link:       https://github.com/131250208/TPlinker-joint-extraction
 """
 
-import re
-import copy
-import json
-import math
 import torch
 import torch.nn as nn
 import numpy as np
 
-from tqdm import tqdm
 from torch.nn.parameter import Parameter
 
 

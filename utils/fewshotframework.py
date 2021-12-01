@@ -18,6 +18,9 @@ class FewshotJointFramework:
         #self.test_data_loader = args.test_data_loader
         self.logger = args.logger
 
+        self.pre_train_data_loader = args.pre_train_data_loader
+        self.pre_valid_data_loader = args.pre_valid_data_loader
+
     def __load_model__(self, ckpt):
         if os.path.isfile(ckpt):
             checkpoint = torch.load(ckpt)
@@ -233,6 +236,148 @@ class FewshotJointFramework:
                 )
             )
         
+        return f1
+    
+    def pretrain(self, args):
+        """ 
+            Pre-training step.
+
+            Args:
+
+                pre_model:              Pre-train model.
+                model_type:             Few shot model type.
+                metrics_calculator:     Few shot metrics calculator.
+                pre_batch_size:         Batch size.
+                pre_learning_rate:      Initial pre-train learning rate.
+                pre_train_epoch:        Num of epochs of training.
+                pre_val_epoch:          Validate every pre-train val_step epochs.
+                pre_report_step:        Validate every pre-train train_step steps.
+                pre_ckpt:               Directory of pre-train checkpoints for saving. Default: None.
+                pre_warmup_rate:        Warming up rate of pre-training.
+                pre_grad_iter:          Iter of gradient descent. Default: 1.
+                tag_seqs_num:           Tag seqs number.
+                use_fp16:               If use fp16.
+            
+            Returns:
+        """
+        self.logger.info("Start pre-training...")
+
+        # Init pre-train model. For simplicity, we do not use DP or DDP.
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        args.pre_model = args.pre_model.to(device)
+
+        # Init optimizer.
+        self.logger.info("Use Bert Optim...")
+        parameters_to_optimize = list(args.pre_model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        parameters_to_optimize = [
+            {'params': [p for n, p in parameters_to_optimize if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in parameters_to_optimize if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
+        optimizer = AdamW(parameters_to_optimize, lr=args.pre_learning_rate, correct_bias=False)
+
+        if args.use_fp16:
+            from apex import amp
+            args.pre_model, optimizer = amp.initialize(args.pre_model, optimizer, opt_level="O1")
+        
+        total_steps = int(args.pre_train_epoch * len(self.pre_train_data_loader.dataset) / args.pre_batch_size) + 1
+        warmup_steps = int(total_steps * args.pre_warmup_rate)
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
+
+        # Pre-training.
+        best_f1 = 0.0
+
+        for epoch_id in range(1, args.pre_train_epoch + 1):
+            iter_loss, iter_accs = 0.0, None
+            args.pre_model.train()
+
+            # Train.
+            for batch_id, batch in enumerate(self.pre_train_data_loader):
+                for k in batch:
+                    if k != "tags" and k != "rel_id" and k != "sample":
+                        batch[k] = batch[k].to(device)
+                batch["tags"] = [torch.stack(batch["tags"][i], 0).to(device) for i in range(args.tag_seqs_num)]
+                
+                logits, preds = args.pre_model(batch)
+                #print("logits: {}, tags: {}".format(logits[0].shape, batch["tags"][0].shape))
+                assert logits[0].shape[:2] == batch["tags"][0].shape[:2]
+                loss = args.pre_model.loss(logits, batch["tags"]) / float(args.pre_grad_iter)
+                accs = args.metrics_calculator.get_accs(preds, batch["tags"])
+                iter_loss += loss.data.item()
+
+                if args.use_fp16:
+                    with amp.scale_loss(loss, optimizer) as scaled_loss:
+                        scaled_loss.backward()
+                else:
+                    loss.backward()
+                
+                if batch_id % args.pre_grad_iter == 0 or batch_id == len(self.pre_train_data_loader.dataset) - 1:
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad()
+
+                if not iter_accs:
+                    iter_accs = {key: 0.0 for key, value in accs.items()}
+                for key, value in accs.items():
+                    iter_accs[key] += value
+                
+                if (batch_id + 1) % args.pre_report_step == 0 or batch_id == len(self.pre_train_data_loader.dataset) - 1:
+                    batch_format = "PRE_TRAIN -- Epoch: {}, Step: {}, loss: {},".format(epoch_id, batch_id + 1, iter_loss / float(args.pre_report_step))
+                    for key, value in iter_accs.items():
+                        batch_format += " {}: {},".format(key, value / float(args.pre_report_step))
+                    batch_format = batch_format[:-1]
+                    self.logger.info(batch_format)
+                    iter_loss = 0.0; iter_accs = None
+            
+            # Valid.
+            if epoch_id % args.pre_val_epoch == 0 or epoch_id == args.pre_train_epoch:
+                val_f1 = self.pre_eval(args.pre_model, args.metrics_calculator, device, args.tag_seqs_num)
+                if val_f1 > best_f1 or epoch_id == args.pre_val_epoch:
+                    if args.pre_ckpt:
+                        self.logger.info("Better checkpoint! Saving...")
+                        torch.save({"state_dict": args.pre_model.state_dict()}, args.pre_ckpt)
+                    best_f1 = val_f1
+        
+        self.logger.info("Finish Pre-training...")
+    
+    def pre_eval(self, pre_model, metrics_calculator, device, tag_seqs_num):
+        '''
+            Validation for pre-train.
+            Args:
+                pre_model:              Pre-train REModel instance.
+                metrics_calculator:     Few shot metrics calculator.
+                device:                 CPU or GPU.
+                tag_seqs_num:           Tag seqs number.
+                model_type:             Few shot model type.
+            Returns: 
+                f1
+        '''
+        self.logger.info("Pretrain evaluation...")
+        pre_model.eval()
+
+        pred_cnt, gold_cnt, correct_cnt = 0, 0, 0
+
+        with torch.no_grad():
+            for batch_id, batch in enumerate(self.pre_valid_data_loader):
+                #print("batch_id: ", batch_id)
+                for k in batch:
+                    if k != "tags" and k != "rel_id" and k != "sample":
+                        batch[k] = batch[k].to(device)
+                batch["tags"] = [torch.stack(batch["tags"][i], 0).to(device) for i in range(tag_seqs_num)]
+
+                logits, preds = pre_model(batch)
+
+                tmp_pred_cnt, tmp_gold_cnt, tmp_correct_cnt = metrics_calculator.get_rel_pgc(batch["sample"], preds)
+                pred_cnt += tmp_pred_cnt; gold_cnt += tmp_gold_cnt; correct_cnt += tmp_correct_cnt
+            
+            prec, rec, f1 = self.get_prf(pred_cnt, gold_cnt, correct_cnt)
+        
+        self.logger.critical(
+            "PRE_TRAIN EVAL -- Eval_instances: {}, Pred: {}, Gold: {}, Correct: {}, Prec: {}, Rec: {}, F1: {}".format(
+                len(self.pre_valid_data_loader), pred_cnt, gold_cnt, correct_cnt, prec, rec, f1
+            )
+        )
+
         return f1
 
     def test(self, args):

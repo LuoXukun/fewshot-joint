@@ -5,6 +5,7 @@
 
 from models.FewTplinker import TPLinkerDataMaker, HandshakingTaggingScheme, TPLinkerMetricsCalculator, FewTPLinker
 from models.FewTplinkerPlus import FewTPLinkerPlus
+from models.PreTplinkerPlus import PreTPlinkerPlus, PreTPLinkerDataMaker
 #from models.FewBiTT import BidirectionalTreeTaggingScheme
 
 TaggingScheme = {
@@ -26,4 +27,12 @@ MetricsCalculator = {
 FewshotModel = {
     "few-tplinker": FewTPLinker,
     "few-tplinker-plus": FewTPLinkerPlus
+}
+
+PreDataMaker = {
+    "few-tplinker-plus": PreTPLinkerDataMaker
+}
+
+PreModel = {
+    "few-tplinker-plus": PreTPlinkerPlus
 }

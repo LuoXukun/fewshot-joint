@@ -6,6 +6,7 @@
 import os
 import json
 import torch
+import loguru
 import argparse
 
 from tqdm import tqdm
@@ -238,6 +239,7 @@ if __name__ == "__main__":
     args.language = "en"                    # The language. "en" or "ch".
     args.batch_size = 1
     #args.num_workers = 4
+    args.logger = loguru.logger
     args.model_type = "few-tplinker"
     args.seq_max_length = seq_max_length
     args.label_max_length = label_max_length

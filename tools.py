@@ -28,6 +28,8 @@ def load_parameters():
                         help="Directory of checkpoints for saving. Default: None.")
     parser.add_argument("--log_path", default=log_path, type=str,
                         help="Log path.")
+    parser.add_argument("--pre_ckpt", default=best_model_path, type=str,
+                        help="Directory of pre-train checkpoints for saving. Default: None.")
 
     # Model options.
     parser.add_argument("--model_type", 
@@ -54,6 +56,8 @@ def load_parameters():
                         help="If train or test. 1->train, 0->test.")
 
     # Training options.
+    parser.add_argument("--fewshot", type=int, default=1,
+                        help="If build up the few-shot module.")
     parser.add_argument("--batch_size", type=int, default=4,
                         help="Batch_size.")
     parser.add_argument("--trainN", type=int, default=2,
@@ -84,6 +88,24 @@ def load_parameters():
                         help="Warmup rate.")
     parser.add_argument("--use_fp16", type=int, default=1,
                         help="If use fp16.")
+
+    # Pre-train options.
+    parser.add_argument("--pretrain", type=int, default=0,
+                        help="If build up the pre-train module.")
+    parser.add_argument("--pre_batch_size", type=int, default=4,
+                        help="Pre-train batch_size.")
+    parser.add_argument("--pre_learning_rate", type=float, default=2e-5,
+                        help="Learning rate.")
+    parser.add_argument("--pre_train_epoch", type=int, default=20,
+                        help="Num of epochs of training.")
+    parser.add_argument("--pre_val_epoch", type=int, default=2,
+                        help="Validate every pre-train val_step epochs.")
+    parser.add_argument("--pre_report_step", type=int, default=1000,
+                        help="Validate every pre-train train_step steps.")
+    parser.add_argument("--pre_warmup_rate", type=float, default=0.1,
+                        help="Warming up rate of pre-training.")
+    parser.add_argument("--pre_grad_iter", type=int, default=1,
+                        help="Iter of gradient descent for pre-training. Default: 1.")
     
     # Data options.
     #parser.add_argument('--num_workers', type=int, default=4,
@@ -113,5 +135,7 @@ def load_parameters():
     args.tag_seqs_num = tag_seqs_num[args.model_type]
     args.train = True if args.train else False
     args.use_fp16 = True if args.use_fp16 else False
+    args.fewshot = True if args.fewshot else False
+    args.pretrain = True if args.pretrain else False
     
     return args

@@ -8,15 +8,10 @@
     We simply cat the hidden state of a token-pair, thus there is no need of HandshakingKernel when calculating the distance.
 """
 
-import re
-import copy
-import json
-import math
 import torch
 import torch.nn as nn
 import numpy as np
 
-from tqdm import tqdm
 from torch.nn.parameter import Parameter
 
 class LayerNorm(nn.Module):
