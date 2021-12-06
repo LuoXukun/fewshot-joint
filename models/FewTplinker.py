@@ -77,6 +77,9 @@ class HandshakingTaggingScheme(object):
         for rel in sample["relations"]:
             subj_tok_span = rel["sub_span"]
             obj_tok_span = rel["obj_span"]
+            
+            if subj_tok_span[1] > self.matrix_size or obj_tok_span[1] > self.matrix_size: continue
+
             ent_matrix_spots.append((subj_tok_span[0], subj_tok_span[1] - 1, self.tag2id_ent["ENT-H2T"]))
             ent_matrix_spots.append((obj_tok_span[0], obj_tok_span[1] - 1, self.tag2id_ent["ENT-H2T"]))
 
@@ -729,3 +732,38 @@ class TPLinkerMetricsCalculator():
             gold_num += len(gold_rel_set)
         
         return pred_num, gold_num, correct_num
+
+if __name__ == "__main__":
+    samples = [{
+        "tokens": ["a", "b", "c", "d"],
+        "relations": [
+            {
+                "label": "eg",
+                "label_array": ["e", "g"],
+                "subject": ["a"],
+                "object": ["c"],
+                "sub_span": (0, 1),
+                "obj_span": (2, 3)
+            },
+            {
+                "label": "eg",
+                "label_array": ["e", "g"],
+                "subject": ["b"],
+                "object": ["d"],
+                "sub_span": (1, 2),
+                "obj_span": (3, 4)
+            },
+        ]
+    }]
+    preds = torch.LongTensor([
+        [
+            [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        ],
+        [
+            [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+        ]
+    ])
+    shakingScheme = HandshakingTaggingScheme(4)
+    cal = TPLinkerMetricsCalculator(shakingScheme)
+    pred, gold, correct = cal.get_rel_pgc(samples, preds)
+    print(pred, gold, correct)

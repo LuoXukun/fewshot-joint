@@ -38,7 +38,7 @@ class FewTPLinkerPlus(nn.Module):
                 map_hidden_size:    The hidden size of mapping layer.
                 dist_type:          The type of calculating disance. ["dot", "euclidean"]
                 label_max_length:   The max length of label inference.
-                plus_type:          The type of variant models. ["dot-sigmoid", "top-k", "negative-sampling"]
+                plus_type:          The type of variant models. ["dot-sigmoid", "top", "top-k-average"]
         """
         super(FewTPLinkerPlus, self).__init__()
         self.encoder = args.encoder
@@ -72,9 +72,11 @@ class FewTPLinkerPlus(nn.Module):
 
         self.__get_nearest_dist__ = {
             "dot-sigmoid": self.__get_nearest_dist_dot_sigmoid__,
-            "top-k": self.__get_nearest_dist_top_k__,
-            "negative-sampling": self.__get_nearest_dist_negative_sampling__
+            "top": self.__get_nearest_dist_top__,
+            "top-k-average": self.__get_nearest_dist_top_k_average__
         }
+        self.k_sr = 3                   # The square root of top k. Only for top-k-average.
+        self.k = self.k_sr * self.k_sr  # Top k Average.
     
     def forward(self, support, query):
         # Support.
@@ -216,9 +218,9 @@ class FewTPLinkerPlus(nn.Module):
 
         return logits
     
-    def __get_nearest_dist_top_k__(self, support_hidden, tag, query_hidden):
+    def __get_nearest_dist_top__(self, support_hidden, tag, query_hidden):
         """ 
-            Get the nearest distance. Top k.
+            Get the nearest distance. Top 1.
             Args:
                 support_hidden:         (2, support_num, seq_len_support -> seq_S, hidden_size)
                 tag:                    (support_num, seq_S x seq_S)
@@ -257,8 +259,46 @@ class FewTPLinkerPlus(nn.Module):
 
         return logits
 
-    def __get_nearest_dist_negative_sampling__(self, support_hidden, tag, query_hidden):
-        pass
+    def __get_nearest_dist_top_k_average__(self, support_hidden, tag, query_hidden):
+        """ 
+            Get the nearest distance. Top K Average.
+            Args:
+                support_hidden:         (2, support_num, seq_len_support -> seq_S, hidden_size)
+                tag:                    (support_num, seq_S x seq_S)
+                query_hidden:           (2, query_num, seq_len_query -> seq_Q, hidden_size)
+            Returns:
+                logits:                 (query, seq_Q x seq_Q, 2)
+        """
+        seq_len, hidden_size = support_hidden.size(2), support_hidden.size(3)
+        support_num, query_num = support_hidden.size(1), query_hidden.size(1)
+
+        # Get the head and tail distance matrix.
+        S_head, S_tail = support_hidden[0].unsqueeze(0), support_hidden[1].unsqueeze(0)                             # (1, support_num, seq_S, hidden_size)
+        Q_head, Q_tail = query_hidden[0].view(-1, 1, 1, hidden_size), query_hidden[1].view(-1, 1, 1, hidden_size)   # (query_num x seq_Q -> tokens_Q, 1, 1, hidden_size)
+        dist_head = self.__dist__(S_head, Q_head, dim=-1)   # (tokens_Q, support_num, seq_S)
+        dist_tail = self.__dist__(S_tail, Q_tail, dim=-1)   # (tokens_Q, support_num, seq_S)
+
+        # Get the top k distance and the index. Default: k = 9
+        dist_head_top, index_head_top = torch.topk(dist_head, self.k_sr, dim=-1)                                                                # (tokens_Q, support_num, k_sr)
+        dist_tail_top, index_tail_top = torch.topk(dist_tail, self.k_sr, dim=-1)                                                                # (tokens_Q, support_num, k_sr)
+        dist_topk = dist_head_top.view(query_num, seq_len, 1, -1, self.k_sr, 1) + dist_tail_top.view(query_num, 1, seq_len, -1, 1, self.k_sr)   # (query_num, seq_Q, seq_Q, support_num, k_sr, k_sr)
+        dist_topk, index_topk = torch.topk(dist_topk.view(query_num, seq_len, seq_len, -1), self.k, dim=-1)                                     # (query_num, seq_Q, seq_Q, k)
+
+        # Get the max distance for tag 1.
+        index_tag1 = torch.nonzero(tag.view(support_num, seq_len, -1), as_tuple=True)
+        dist_head_tag1 = dist_head[:, index_tag1[0], index_tag1[1]]                                                 # (tokens_Q, tag1_num)
+        dist_tail_tag1 = dist_tail[:, index_tag1[0], index_tag1[2]]                                                 # (tokens_Q, tag1_num)
+        dist_tag1 = dist_head_tag1.view(query_num, seq_len, 1, -1) + dist_tail_tag1.view(query_num, 1, seq_len, -1) # (query_num, seq_Q, seq_Q, tag1_num)
+        dist_max_tag1, index_max_tag1 = torch.max(dist_tag1, dim=-1)                                                # (query_num, seq_Q, seq_Q)
+
+        # Get the average distance for tag0.
+        mask_tag1 = (dist_topk == dist_max_tag1.view(query_num, seq_len, seq_len, -1).repeat(1, 1, 1, self.k)).long()   # (query_num, seq_Q, seq_Q, k)
+        dist_avg_tag0 = (dist_topk * (1 - mask_tag1)).sum(-1) / (1 - mask_tag1).sum(-1)                                 # (query_num, seq_Q, seq_Q)
+
+        # Stack the logits.
+        logits = torch.stack([dist_avg_tag0, dist_max_tag1], dim=3).view(query_num, -1, 2)                          # (query_num, seq_Q x seq_Q, 2)
+
+        return logits
 
     def __get_inference_preds__(self, support_hidden, tag, query_hidden):
         """ 

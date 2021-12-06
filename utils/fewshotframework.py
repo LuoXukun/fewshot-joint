@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 
 #from torch.nn import DataParallel
+from tqdm import tqdm
 from transformers import AdamW, get_linear_schedule_with_warmup
 
 class FewshotJointFramework:
@@ -262,6 +263,25 @@ class FewshotJointFramework:
         """
         self.logger.info("Start pre-training...")
 
+        # Load model.
+        if args.pre_ckpt:
+            if os.path.exists(args.pre_ckpt):
+                self.logger.info("Loading checkpoint '{}'...".format(args.pre_ckpt))
+                state_dict = self.__load_model__(args.pre_ckpt)['state_dict']
+                own_state = args.pre_model.state_dict()
+                for name, param in state_dict.items():
+                    if name not in own_state:
+                        self.logger.warning("Ignore {}".format(name))
+                        continue
+                    self.logger.info("Loading {} from {}".format(name, args.pre_ckpt))
+                    own_state[name].copy_(param)
+                # Init pre-train model. For simplicity, we do not use DP or DDP.
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                args.pre_model = args.pre_model.to(device)
+                self.logger.info("Evaluating the checkpoint of pre-trained model.")
+                val_f1 = self.pre_eval(args.pre_model, args.metrics_calculator, device, args.tag_seqs_num)
+                #exit()
+
         # Init pre-train model. For simplicity, we do not use DP or DDP.
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         args.pre_model = args.pre_model.to(device)
@@ -301,7 +321,10 @@ class FewshotJointFramework:
                 logits, preds = args.pre_model(batch)
                 #print("logits: {}, tags: {}".format(logits[0].shape, batch["tags"][0].shape))
                 assert logits[0].shape[:2] == batch["tags"][0].shape[:2]
-                loss = args.pre_model.loss(logits, batch["tags"]) / float(args.pre_grad_iter)
+                if (batch_id + 1) % args.pre_report_step == 0 or batch_id == len(self.pre_train_data_loader.dataset) - 1:
+                    loss = args.pre_model.loss(logits, batch["tags"], quiet=False) / float(args.pre_grad_iter)
+                else:
+                    loss = args.pre_model.loss(logits, batch["tags"]) / float(args.pre_grad_iter)
                 accs = args.metrics_calculator.get_accs(preds, batch["tags"])
                 iter_loss += loss.data.item()
 
@@ -359,6 +382,7 @@ class FewshotJointFramework:
 
         with torch.no_grad():
             for batch_id, batch in enumerate(self.pre_valid_data_loader):
+            #for batch_id, batch in tqdm(enumerate(self.pre_train_data_loader)):
                 #print("batch_id: ", batch_id)
                 for k in batch:
                     if k != "tags" and k != "rel_id" and k != "sample":

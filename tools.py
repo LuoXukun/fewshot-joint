@@ -37,7 +37,7 @@ def load_parameters():
         default="few-tplinker",
         help="Few shot model type.")
     parser.add_argument("--plus_type", 
-        choices=["dot-sigmoid", "top-k", "negative-sampling"],
+        choices=["dot-sigmoid", "top", "top-k-average"],
         default="dot-sigmoid",
         help="The plus type of few-tplinker-plus.")
     parser.add_argument("--shaking_type", 
