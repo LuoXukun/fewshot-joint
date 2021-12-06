@@ -23,7 +23,8 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
         self.ent_fc = nn.Linear(self.map_hidden_size * 2, 2)
         self.head_rel_fc = nn.Linear(self.map_hidden_size * 2, 2)
 
-        self.pre_cost = nn.CrossEntropyLoss()
+        self.cost_weight = torch.Tensor([1.0, 10.0])
+        self.pre_cost = nn.CrossEntropyLoss(weight=self.cost_weight)
 
     def forward(self, batch):
         # Embedding. (batch_size, seq_len, hidden_size)
@@ -39,10 +40,12 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
         ent_hidden_0 = ent_hidden[0].view(batch_size, seq_len, 1, -1).repeat(1, 1, seq_len, 1)
         ent_hidden_1 = ent_hidden[1].view(batch_size, 1, seq_len, -1).repeat(1, seq_len, 1, 1)
         ent_hidden_cat = torch.cat([ent_hidden_0, ent_hidden_1], -1).view(batch_size, seq_len * seq_len, -1)
+        #ent_hidden_cat = torch.tanh(torch.cat([ent_hidden_0, ent_hidden_1], -1).view(batch_size, seq_len * seq_len, -1))
 
         head_rel_hidden_0 = head_rel_hidden[0].view(batch_size, seq_len, 1, -1).repeat(1, 1, seq_len, 1)
         head_rel_hidden_1 = head_rel_hidden[1].view(batch_size, 1, seq_len, -1).repeat(1, seq_len, 1, 1)
         head_rel_hidden_cat = torch.cat([head_rel_hidden_0, head_rel_hidden_1], -1).view(batch_size, seq_len * seq_len, -1)
+        #head_rel_hidden_cat = torch.tanh(torch.cat([head_rel_hidden_0, head_rel_hidden_1], -1).view(batch_size, seq_len * seq_len, -1))
         
         # Feats. (batch_size, seq_len * seq_len, 2)
         ent_feats = self.ent_fc(ent_hidden_cat)
@@ -55,7 +58,7 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
         # Result. (2, batch_size, seq_len * seq_len, 2), (2, batch_size, seq_len * seq_len)
         return [ent_feats, head_rel_feats], [ent_preds, head_rel_preds]
     
-    def loss(self, logits, label):
+    def loss(self, logits, label, quiet=True):
         '''
             Args:
 
@@ -70,7 +73,9 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
         for i in range(2):
             N = logits[i].size(-1)
             loss.append(self.pre_cost(logits[i].view(-1, N), label[i].view(-1)))
-        loss = loss[0] + loss[1]
+        if not quiet:
+            print("ent_loss: {}, rel_loss: {}".format(loss[0], loss[1]))
+        loss = 2.0 * loss[0] + loss[1]
         return loss
 
 class PreTPLinkerDataMaker():

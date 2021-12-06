@@ -7,6 +7,7 @@
 
 import os
 import json
+import copy
 import torch
 import loguru
 import argparse
@@ -77,11 +78,21 @@ class PretrainDataset(Dataset):
         self.logger.info("Preprocessing datas...")
         for sample in tqdm(samples, desc="Preprocessing", total=len(samples)):
             for rel, rel_id in self.tag2id.items():
-                new_samples.append({
+                new_sample = {
                     "tokens": sample["tokens"],
                     "relations": [relation for relation in sample["relations"] if relation["label"] == rel],
                     "label": rel
-                })
+                }
+                if self.mode:
+                    # Valid.
+                    new_samples.append(new_sample)
+                else:
+                    # Train. Resampling.
+                    sample_rel_len = len(new_sample["relations"])
+                    if sample_rel_len:
+                        new_samples.extend([new_sample for _ in range(len(self.tag2id) - 1)])
+                    else:
+                        new_samples.append(new_sample)
         self.logger.info("Samples length after preprocessing: {}".format(len(new_samples)))
         return new_samples
     
@@ -129,7 +140,7 @@ def get_loader_pre(args, mode=0):
     data_loader = DataLoader(
         dataset=dataset,
         batch_size=args.pre_batch_size,
-        shuffle=False,
+        shuffle=True,
         #pin_memory=True,
         #num_workers=args.num_workers,
         collate_fn=lambda batch: collate_fn(batch, model_type=args.model_type)
