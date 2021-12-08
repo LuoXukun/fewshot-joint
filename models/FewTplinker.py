@@ -9,6 +9,7 @@
     Link:       https://github.com/131250208/TPlinker-joint-extraction
 """
 
+import math
 import torch
 import torch.nn as nn
 import numpy as np
@@ -36,12 +37,12 @@ class HandshakingTaggingScheme(object):
         }
         self.id2tag_head_rel = {id_:tag for tag, id_ in self.tag2id_head_rel.items()}
 
-        """ self.tag2id_tail_rel = {
+        self.tag2id_tail_rel = {
             "O": 0,    
             "REL-ST2OT": 1, # subject tail to object tail
             #"REL-OT2ST": 2, # object tail to subject tail
         }
-        self.id2tag_tail_rel = {id_:tag for tag, id_ in self.tag2id_tail_rel.items()} """
+        self.id2tag_tail_rel = {id_:tag for tag, id_ in self.tag2id_tail_rel.items()}
 
         # mapping shaking sequence and matrix
         self.matrix_size = max_seq_len
@@ -84,7 +85,7 @@ class HandshakingTaggingScheme(object):
             ent_matrix_spots.append((obj_tok_span[0], obj_tok_span[1] - 1, self.tag2id_ent["ENT-H2T"]))
 
             head_rel_matrix_spots.append((subj_tok_span[0], obj_tok_span[0], self.tag2id_head_rel["REL-SH2OH"]))
-            #tail_rel_matrix_spots.append((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tag2id_tail_rel["REL-ST2OT"]))
+            tail_rel_matrix_spots.append((subj_tok_span[1] - 1, obj_tok_span[1] - 1, self.tag2id_tail_rel["REL-ST2OT"]))
 
             """ if  subj_tok_span[0] <= obj_tok_span[0]:
                 head_rel_matrix_spots.append((subj_tok_span[0], obj_tok_span[0], self.tag2id_head_rel["REL-SH2OH"]))
@@ -135,7 +136,7 @@ class HandshakingTaggingScheme(object):
                       tokens, 
                       ent_shaking_tag, 
                       head_rel_shaking_tag, 
-                      tail_rel_shaking_tag=None):
+                      tail_rel_shaking_tag):
         '''
         ent shaking tag: (shaking_seq_len, )
         head rel and tail rel shaking_tag: size = (shaking_seq_len, )
@@ -144,7 +145,7 @@ class HandshakingTaggingScheme(object):
         
         ent_matrix_spots = self.get_sharing_spots_fr_shaking_tag(ent_shaking_tag)
         head_rel_matrix_spots = self.get_sharing_spots_fr_shaking_tag(head_rel_shaking_tag)
-        #tail_rel_matrix_spots = self.get_sharing_spots_fr_shaking_tag(tail_rel_shaking_tag)
+        tail_rel_matrix_spots = self.get_sharing_spots_fr_shaking_tag(tail_rel_shaking_tag)
 
         # entity
         head_ind2entities = {}
@@ -164,7 +165,7 @@ class HandshakingTaggingScheme(object):
             })
             
         # tail relation
-        """ tail_rel_memory_set = set()
+        tail_rel_memory_set = set()
         for sp in tail_rel_matrix_spots:
             tag_id = sp[2]
             if tag_id == self.tag2id_tail_rel["REL-ST2OT"]:
@@ -172,7 +173,7 @@ class HandshakingTaggingScheme(object):
                 tail_rel_memory_set.add(tail_rel_memory)
             #elif tag_id == self.tag2id_tail_rel["REL-OT2ST"]:
             #    tail_rel_memory = "{}-{}".format(sp[1], sp[0])
-            #    tail_rel_memory_set.add(tail_rel_memory) """
+            #    tail_rel_memory_set.add(tail_rel_memory)
 
         # head relation
         for sp in head_rel_matrix_spots:
@@ -192,10 +193,10 @@ class HandshakingTaggingScheme(object):
             # go over all subj-obj pair to check whether the relation exists
             for subj in subj_list:
                 for obj in obj_list:
-                    """ tail_rel_memory = "{}-{}".format(subj["tok_span"][1] - 1, obj["tok_span"][1] - 1)
+                    tail_rel_memory = "{}-{}".format(subj["tok_span"][1] - 1, obj["tok_span"][1] - 1)
                     if tail_rel_memory not in tail_rel_memory_set:
                         # no such relation 
-                        continue """
+                        continue
                     
                     rel_list.append({
                         "subject": subj["tokens"],
@@ -263,9 +264,9 @@ class TPLinkerDataMaker():
             ent_matrix_spots, head_rel_matrix_spots, tail_rel_matrix_spots = self.handshaking_tagger.get_spots(sample)
             ent_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(ent_matrix_spots)
             head_rel_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(head_rel_matrix_spots)
-            #tail_rel_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(tail_rel_matrix_spots)
-            #tags = [ent_shaking_tag, head_rel_shaking_tag, tail_rel_shaking_tag]
-            tags = [ent_shaking_tag, head_rel_shaking_tag]
+            tail_rel_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(tail_rel_matrix_spots)
+            tags = [ent_shaking_tag, head_rel_shaking_tag, tail_rel_shaking_tag]
+            #tags = [ent_shaking_tag, head_rel_shaking_tag]
 
             indexed_data.append((src_ids, seg_ids, mask_ids, tags, rel_id, sample))
         
@@ -498,8 +499,8 @@ class FewTPLinker(nn.Module):
         head_rel_query_hidden = self.head_rel_map_fc(query_hidden)
         tail_rel_query_hidden = self.tail_rel_map_fc(query_hidden)
 
-        logits = [[] for i in range(2)] # ent, head_rel, tail_rel
-        pred = [[] for i in range(2)]
+        logits = [[] for i in range(3)] # ent, head_rel, tail_rel
+        pred = [[] for i in range(3)]
         current_support_num = 0
         current_query_num = 0
         
@@ -526,20 +527,20 @@ class FewTPLinker(nn.Module):
                 )
             )
             #print("tail_rel")
-            """ logits[2].append(   # tail_rel
+            logits[2].append(   # tail_rel
                 self.__get_nearest_dist__(
                     tail_rel_support_hidden[current_support_num:current_support_num+support_samples_num],
                     support["tags"][2][current_support_num:current_support_num+support_samples_num],
                     tail_rel_query_hidden[current_query_num:current_query_num+query_samples_num],
                     max_tag = 1
                 )
-            ) """
+            )
             current_query_num += query_samples_num
             current_support_num += support_samples_num
         
         #print("logits: {}, {}, {}".format(logits[0][0].size(), logits[1][0].size(), logits[2][0].size()))
         #print("logits: {}, {}, {}".format(logits[0][0], logits[1][0], logits[2][0]))
-        for i in range(2):
+        for i in range(3):
             logits[i] = torch.cat(logits[i], 0)
             _, pred[i] = torch.max(logits[i], -1)
         
@@ -625,8 +626,8 @@ class FewTPLinker(nn.Module):
         '''
             Args:
 
-                logits:     Logits with the size (2, query_num, seq_len, class_num)
-                label:      Label with the size (2, query_num, seq_len).
+                logits:     Logits with the size (3, query_num, seq_len, class_num)
+                label:      Label with the size (3, query_num, seq_len).
 
             Returns: 
 
@@ -635,17 +636,17 @@ class FewTPLinker(nn.Module):
         # 此处无法使用mask_ids来去掉[PAD]得到的logits，因为logits形状变了，
         # 但由于attention计算使用了mask，会使那一部分的参数不更新
         loss = []
-        for i in range(2):
+        for i in range(3):
             N = logits[i].size(-1)
             loss.append(self.cost(logits[i].view(-1, N), label[i].view(-1)))
-        loss = loss[0] + loss[1]
+        loss = loss[0] + loss[1] + loss[2]
         return loss
 
 class TPLinkerMetricsCalculator():
     def __init__(self, handshaking_tagger: HandshakingTaggingScheme):
         self.handshaking_tagger = handshaking_tagger
-        #self.accs_keys = ["ent_sample_acc", "head_rel_sample_acc", "tail_rel_sample_acc"]
-        self.accs_keys = ["ent_sample_acc", "head_rel_sample_acc"]
+        self.accs_keys = ["ent_sample_acc", "head_rel_sample_acc", "tail_rel_sample_acc"]
+        #self.accs_keys = ["ent_sample_acc", "head_rel_sample_acc"]
     
     def get_accs(self, preds, labels):
         '''
@@ -653,8 +654,8 @@ class TPLinkerMetricsCalculator():
 
             Args:
 
-                preds:      Preds with the size (2, query_num, seq_len).
-                label:      Label with the size (2, query_num, seq_len).
+                preds:      Preds with the size (3, query_num, seq_len).
+                label:      Label with the size (3, query_num, seq_len).
 
             Returns: 
 
@@ -695,12 +696,14 @@ class TPLinkerMetricsCalculator():
                                     }, ...
                                 ]
                             }
-                preds:      Preds with the size (2, query_num, seq_len).
+                preds:      Preds with the size (3, query_num, seq_len).
 
             Returns: 
 
                 (pred, gold, correct)
         '''
+        seq_len = int(math.sqrt(preds[0].size(1)))
+        #print("seq_len: ", seq_len)
         correct_num, pred_num, gold_num = 0, 0, 0
 
         for index in range(len(samples)):
@@ -708,10 +711,10 @@ class TPLinkerMetricsCalculator():
             tokens = sample["tokens"]
             pred_ent_shaking_tag = preds[0][index]
             pred_head_rel_shaking_tag = preds[1][index]
-            #pred_tail_rel_shaking_tag = preds[2][index]
+            pred_tail_rel_shaking_tag = preds[2][index]
 
             pred_rel_list = self.handshaking_tagger.decode_rel_fr_shaking_tag(
-                tokens, pred_ent_shaking_tag, pred_head_rel_shaking_tag
+                tokens, pred_ent_shaking_tag, pred_head_rel_shaking_tag, pred_tail_rel_shaking_tag
             )
 
             gold_rel_list = sample["relations"]
@@ -724,7 +727,7 @@ class TPLinkerMetricsCalculator():
             gold_rel_set = set([
                 "{}, {}, {}, {}".format(
                     rel["sub_span"][0], rel["sub_span"][1], rel["obj_span"][0], rel["obj_span"][1]
-                ) for rel in gold_rel_list
+                ) for rel in gold_rel_list if rel["sub_span"][1] <= seq_len and rel["obj_span"][1] <= seq_len
             ])
 
             correct_num += len(pred_rel_set.intersection(gold_rel_set))
@@ -758,6 +761,9 @@ if __name__ == "__main__":
     preds = torch.LongTensor([
         [
             [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        ],
+        [
+            [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
         ],
         [
             [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]

@@ -27,8 +27,8 @@ model_type_dict = {
 }
 
 tag_seqs_num = {
-    "few-tplinker": 2,
-    "few-tplinker-plus": 2,
+    "few-tplinker": 3,
+    "few-tplinker-plus": 3,
     #"few-bitt": 8
 }
 

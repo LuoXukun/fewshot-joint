@@ -22,6 +22,7 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
         
         self.ent_fc = nn.Linear(self.map_hidden_size * 2, 2)
         self.head_rel_fc = nn.Linear(self.map_hidden_size * 2, 2)
+        self.tail_rel_fc = nn.Linear(self.map_hidden_size * 2, 2)
 
         self.cost_weight = torch.Tensor([1.0, 10.0])
         self.pre_cost = nn.CrossEntropyLoss(weight=self.cost_weight)
@@ -33,6 +34,7 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
         # Hidden. (2, batch_size, seq_len, map_hidden_size)
         ent_hidden = torch.stack([self.ent_map_fc[i](self.dropout(embedding)) for i in range(2)])               # The head and tail ent matrix for handshaking.
         head_rel_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(embedding)) for i in range(2)])     # The head rel matrix for handshaking.
+        tail_rel_hidden = torch.stack([self.tail_rel_map_fc[i](self.dropout(embedding)) for i in range(2)])     # The head rel matrix for handshaking.
 
         # Handshaking. (batch_size, seq_len * seq_len, map_hidden_size * 2)
         batch_size, seq_len = ent_hidden.size(1), ent_hidden.size(2)
@@ -46,17 +48,24 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
         head_rel_hidden_1 = head_rel_hidden[1].view(batch_size, 1, seq_len, -1).repeat(1, seq_len, 1, 1)
         head_rel_hidden_cat = torch.cat([head_rel_hidden_0, head_rel_hidden_1], -1).view(batch_size, seq_len * seq_len, -1)
         #head_rel_hidden_cat = torch.tanh(torch.cat([head_rel_hidden_0, head_rel_hidden_1], -1).view(batch_size, seq_len * seq_len, -1))
+
+        tail_rel_hidden_0 = tail_rel_hidden[0].view(batch_size, seq_len, 1, -1).repeat(1, 1, seq_len, 1)
+        tail_rel_hidden_1 = tail_rel_hidden[1].view(batch_size, 1, seq_len, -1).repeat(1, seq_len, 1, 1)
+        tail_rel_hidden_cat = torch.cat([tail_rel_hidden_0, tail_rel_hidden_1], -1).view(batch_size, seq_len * seq_len, -1)
+        #tail_rel_hidden_cat = torch.tanh(torch.cat([tail_rel_hidden_0, tail_rel_hidden_1], -1).view(batch_size, seq_len * seq_len, -1))
         
         # Feats. (batch_size, seq_len * seq_len, 2)
         ent_feats = self.ent_fc(ent_hidden_cat)
         head_rel_feats = self.head_rel_fc(head_rel_hidden_cat)
+        tail_rel_feats = self.tail_rel_fc(head_rel_hidden_cat)
 
         # preds. (batch_size, seq_len * seq_len)
         _, ent_preds = torch.max(ent_feats, -1)
         _, head_rel_preds = torch.max(head_rel_feats, -1)
+        _, tail_rel_preds = torch.max(tail_rel_feats, -1)
 
-        # Result. (2, batch_size, seq_len * seq_len, 2), (2, batch_size, seq_len * seq_len)
-        return [ent_feats, head_rel_feats], [ent_preds, head_rel_preds]
+        # Result. (3, batch_size, seq_len * seq_len, 2), (3, batch_size, seq_len * seq_len)
+        return [ent_feats, head_rel_feats, tail_rel_feats], [ent_preds, head_rel_preds, tail_rel_preds]
     
     def loss(self, logits, label, quiet=True):
         '''
@@ -70,12 +79,12 @@ class PreTPlinkerPlus(FewTPLinkerPlus):
                 [Loss] (A single value)
         '''
         loss = []
-        for i in range(2):
+        for i in range(3):
             N = logits[i].size(-1)
             loss.append(self.pre_cost(logits[i].view(-1, N), label[i].view(-1)))
         if not quiet:
-            print("ent_loss: {}, rel_loss: {}".format(loss[0], loss[1]))
-        loss = 2.0 * loss[0] + loss[1]
+            print("ent_loss: {}, head_rel_loss: {}, tail_rel_loss: {}".format(loss[0], loss[1], loss[2]))
+        loss = loss[0] + loss[1] + loss[2]
         return loss
 
 class PreTPLinkerDataMaker():
@@ -134,8 +143,8 @@ class PreTPLinkerDataMaker():
         ent_matrix_spots, head_rel_matrix_spots, tail_rel_matrix_spots = self.handshaking_tagger.get_spots(data)
         ent_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(ent_matrix_spots)
         head_rel_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(head_rel_matrix_spots)
-        #tail_rel_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(tail_rel_matrix_spots)
-        #tags = [ent_shaking_tag, head_rel_shaking_tag, tail_rel_shaking_tag]
-        tags = [ent_shaking_tag, head_rel_shaking_tag]
+        tail_rel_shaking_tag = self.handshaking_tagger.sharing_spots2shaking_tag(tail_rel_matrix_spots)
+        tags = [ent_shaking_tag, head_rel_shaking_tag, tail_rel_shaking_tag]
+        #tags = [ent_shaking_tag, head_rel_shaking_tag]
 
         return src_ids, seg_ids, mask_ids, tags, self.rel2id[label], data

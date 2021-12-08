@@ -60,6 +60,7 @@ class FewTPLinkerPlus(nn.Module):
         # Mapping Layer
         self.ent_map_fc = nn.ModuleList([nn.Linear(self.hidden_size, self.map_hidden_size) for _ in range(2)])
         self.head_rel_map_fc = nn.ModuleList([nn.Linear(self.hidden_size, self.map_hidden_size) for _ in range(2)])
+        self.tail_rel_map_fc = nn.ModuleList([nn.Linear(self.hidden_size, self.map_hidden_size) for _ in range(2)])
 
         # Drop out
         self.dropout = nn.Dropout()
@@ -82,14 +83,16 @@ class FewTPLinkerPlus(nn.Module):
         # Support.
         support_emb = self.encoder(support["src_ids"], support["mask_ids"], support["seg_ids"])[:, self.label_max_length + 2:, :]
         ent_support_hidden = torch.stack([self.ent_map_fc[i](self.dropout(support_emb)) for i in range(2)])             # The head and tail ent matrix for handshaking.
-        head_rel_support_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(support_emb)) for i in range(2)])   # The head and tail rel matrix for handshaking.
+        head_rel_support_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(support_emb)) for i in range(2)])   # The head and tail head_rel matrix for handshaking.
+        tail_rel_support_hidden = torch.stack([self.tail_rel_map_fc[i](self.dropout(support_emb)) for i in range(2)])   # The head and tail tail_rel matrix for handshaking.
 
         # Query.
         query_emb = self.encoder(query["src_ids"], query["mask_ids"], query["seg_ids"])[:, self.label_max_length + 2:, :]
         ent_query_hidden = torch.stack([self.ent_map_fc[i](self.dropout(query_emb)) for i in range(2)])                 # The head and tail ent matrix for handshaking.
-        head_rel_query_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(query_emb)) for i in range(2)])       # The head and tail rel matrix for handshaking.
+        head_rel_query_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(query_emb)) for i in range(2)])       # The head and tail head_rel matrix for handshaking.
+        tail_rel_query_hidden = torch.stack([self.tail_rel_map_fc[i](self.dropout(query_emb)) for i in range(2)])       # The head and tail tail_rel matrix for handshaking.
 
-        logits, pred = [[] for i in range(2)], [[] for i in range(2)] # ent, head_rel
+        logits, pred = [[] for i in range(3)], [[] for i in range(3)] # ent, head_rel, tail_rel.
         current_support_num, current_query_num = 0, 0
         
         for index, support_samples_num in enumerate(support["samples_num"]):
@@ -111,10 +114,18 @@ class FewTPLinkerPlus(nn.Module):
                     head_rel_query_hidden[:, current_query_num:current_query_num+query_samples_num]
                 )
             )
+            #print("tail_rel")
+            logits[2].append(   # tail_rel
+                self.__get_nearest_dist__[self.plus_type](
+                    tail_rel_support_hidden[:, current_support_num:current_support_num+support_samples_num],
+                    support["tags"][2][current_support_num:current_support_num+support_samples_num],
+                    tail_rel_query_hidden[:, current_query_num:current_query_num+query_samples_num]
+                )
+            )
             current_query_num += query_samples_num
             current_support_num += support_samples_num
 
-        for i in range(2):
+        for i in range(3):
             logits[i] = torch.cat(logits[i], 0)
             _, pred[i] = torch.max(logits[i], -1)
         
@@ -124,14 +135,16 @@ class FewTPLinkerPlus(nn.Module):
         # Support.
         support_emb = self.encoder(support["src_ids"], support["mask_ids"], support["seg_ids"])[:, self.label_max_length + 2:, :]
         ent_support_hidden = torch.stack([self.ent_map_fc[i](self.dropout(support_emb)) for i in range(2)])             # The head and tail ent matrix for handshaking.
-        head_rel_support_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(support_emb)) for i in range(2)])   # The head and tail rel matrix for handshaking.
+        head_rel_support_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(support_emb)) for i in range(2)])   # The head and tail head_rel matrix for handshaking.
+        tail_rel_support_hidden = torch.stack([self.tail_rel_map_fc[i](self.dropout(support_emb)) for i in range(2)])   # The head and tail tail_rel matrix for handshaking.
 
         # Query.
         query_emb = self.encoder(query["src_ids"], query["mask_ids"], query["seg_ids"])[:, self.label_max_length + 2:, :]
         ent_query_hidden = torch.stack([self.ent_map_fc[i](self.dropout(query_emb)) for i in range(2)])                 # The head and tail ent matrix for handshaking.
-        head_rel_query_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(query_emb)) for i in range(2)])       # The head and tail rel matrix for handshaking.
+        head_rel_query_hidden = torch.stack([self.head_rel_map_fc[i](self.dropout(query_emb)) for i in range(2)])       # The head and tail head_rel matrix for handshaking.
+        tail_rel_query_hidden = torch.stack([self.tail_rel_map_fc[i](self.dropout(query_emb)) for i in range(2)])       # The head and tail tail_rel matrix for handshaking.
 
-        pred = [[] for i in range(2)] # ent, head_rel
+        pred = [[] for i in range(3)] # ent, head_rel, tail_rel.
         current_support_num, current_query_num = 0, 0
         
         for index, support_samples_num in enumerate(support["samples_num"]):
@@ -153,10 +166,18 @@ class FewTPLinkerPlus(nn.Module):
                     head_rel_query_hidden[:, current_query_num:current_query_num+query_samples_num]
                 )
             )
+            #print("tail_rel")
+            pred[2].append(   # tail_rel
+                self.__get_inference_preds__(
+                    tail_rel_support_hidden[:, current_support_num:current_support_num+support_samples_num],
+                    support["tags"][2][current_support_num:current_support_num+support_samples_num],
+                    tail_rel_query_hidden[:, current_query_num:current_query_num+query_samples_num]
+                )
+            )
             current_query_num += query_samples_num
             current_support_num += support_samples_num
 
-        for i in range(2):
+        for i in range(3):
             pred[i] = torch.cat(pred[i], 0)
         
         return None, pred
@@ -363,8 +384,8 @@ class FewTPLinkerPlus(nn.Module):
         '''
             Args:
 
-                logits:     Logits with the size (2, query_num, seq_len x seq_len, class_num)
-                label:      Label with the size (2, query_num, seq_len x seq_len).
+                logits:     Logits with the size (3, query_num, seq_len x seq_len, class_num)
+                label:      Label with the size (3, query_num, seq_len x seq_len).
 
             Returns: 
 
@@ -373,11 +394,11 @@ class FewTPLinkerPlus(nn.Module):
         # 此处无法使用mask_ids来去掉[PAD]得到的logits，因为logits形状变了，
         # 但由于attention计算使用了mask，会使那一部分的参数不更新
         loss = []
-        for i in range(2):
+        for i in range(3):
             if self.plus_type == "dot-sigmoid":
                 loss.append(self.cost(logits[i][:, :, 1].view(-1), label[i].float().view(-1)))
             else:
                 N = logits[i].size(-1)
                 loss.append(self.cost(logits[i].view(-1, N), label[i].view(-1)))
-        loss = loss[0] + loss[1]
+        loss = loss[0] + loss[1] + loss[2]
         return loss
