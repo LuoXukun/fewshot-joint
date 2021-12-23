@@ -33,7 +33,7 @@ def load_parameters():
 
     # Model options.
     parser.add_argument("--model_type", 
-        choices=["few-tplinker", "few-tplinker-plus"],
+        choices=["few-tplinker", "few-tplinker-plus", "few-bitt"],
         default="few-tplinker",
         help="Few shot model type.")
     parser.add_argument("--plus_type", 
@@ -111,7 +111,7 @@ def load_parameters():
     #parser.add_argument('--num_workers', type=int, default=4,
     #                    help='Number of thread workers for data loader.')
     parser.add_argument("--data_name", 
-        choices=["NYT"],
+        choices=["NYT", "Domain-Transfer"],
         default="NYT",
         help="Name of dataset.")
     parser.add_argument("--data_type", 

@@ -29,7 +29,7 @@ model_type_dict = {
 tag_seqs_num = {
     "few-tplinker": 3,
     "few-tplinker-plus": 3,
-    #"few-bitt": 8
+    "few-bitt": 8
 }
 
 # seq_max_length = 50 # For FewTPlinker
