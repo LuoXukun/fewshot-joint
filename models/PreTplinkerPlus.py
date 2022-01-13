@@ -125,9 +125,6 @@ class PreTPLinkerDataMaker():
         rel_tokens = self.rel2array[label]
         rel_tokens_len = len(rel_tokens)
 
-        indexed_data = []
-        tokens, relations = data["tokens"], data["relations"]
-
         if rel_tokens_len > label_max_len:
             rel_tokens = rel_tokens[0:label_max_len]
             rel_mask_index = label_max_len + 1

@@ -31,7 +31,7 @@ def get_norm_data(data, tokenizer, data_name):
     new_data, label2array = [], {}
     
     for index, sample in tqdm(enumerate(data), desc = "Getting normalized data", total=len(data)):
-        if data_name == "NYT" or data_name == "WebNLG":
+        if data_name == "NYT" or data_name == "WebNLG" or data_name == "Domain-Transfer":
             text = normalize_text(sample["sentText"]).strip()
             rel_list = sample["relationMentions"]
             sub_key, label_key, obj_key = "em1Text", "label", "em2Text"
@@ -44,7 +44,7 @@ def get_norm_data(data, tokenizer, data_name):
         normal_sample = {"tokens": tokens, "relations": []}
         for rel in rel_list:
             label = rel[label_key]
-            if data_name == "NYT":
+            if data_name == "NYT" or data_name == "Domain-Transfer":
                 sub = tokenizer.tokenize(normalize_text(rel[sub_key]).strip())
                 obj = tokenizer.tokenize(normalize_text(rel[obj_key]).strip())
                 label_array = label.replace("_", "/").split("/")[1:]
